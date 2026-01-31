@@ -80,15 +80,23 @@ for col in df.columns:
     if df[col].dtype == 'object':
         df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else 'Unknown')
     else:
-        df[col] = df[col].fillna(df[col].median())
+        # Only use median for numeric columns
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = df[col].fillna(df[col].median())
+        else:
+            df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else 0)
 
 # Encode categorical variables
 label_encoders = {}
-for col in categorical_cols + ['Credit_Score']:
-    if col in df.columns:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col])
-        label_encoders[col] = le
+
+# First, identify all columns with object dtype
+object_cols = df.select_dtypes(include=['object']).columns.tolist()
+
+# Encode all object columns
+for col in object_cols:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col].astype(str))
+    label_encoders[col] = le
 
 # Target variable: Credit_Score (0: Good, 1: Poor, 2: Standard) - but for binary, let's make Poor=1 (bad), others=0 (good)
 # But user said classification, and creditworthiness, so multi-class or binary? Approach says classification, metrics for binary but can extend.
@@ -100,6 +108,14 @@ df['Credit_Score'] = np.where(df['Credit_Score'] == label_encoders['Credit_Score
 # Features and target
 X = df.drop('Credit_Score', axis=1)
 y = df['Credit_Score']
+
+# Ensure all features are numeric
+for col in X.columns:
+    X[col] = pd.to_numeric(X[col], errors='coerce')
+
+# Drop any rows with NaN values that might have been created
+X = X.dropna()
+y = y[X.index]
 
 # Scale numeric features
 scaler = StandardScaler()
